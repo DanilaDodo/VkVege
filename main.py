@@ -1,13 +1,14 @@
 import json
 import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
+from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.keyboard import VkKeyboard, VkKeyboardColor
 from config import TOKEN, ADMIN
 
 # Аутентификация
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
-longpoll = VkLongPoll(vk_session)
+longpoll = VkBotLongPoll(vk_session, 237338455)
 admin_id = ADMIN
 
 # Клавиатура
@@ -28,9 +29,8 @@ def button():
 # Принять одно сообщение и обработать его
 def message():
     for event in longpoll.listen():
-        if event.type == VkEventType.MESSAGE_NEW:
-            if event.to_me:
-                return event.text
+        if event.type == VkBotEventType.MESSAGE_NEW:
+            return event
 
 # Команда "начать"
 def start(id, text):
@@ -45,41 +45,34 @@ def choice_of_pizzeria(id, text):
     vk.messages.send(user_id=id, message=text, random_id=0, keyboard=keyboard)
 
 
-
 # Создание нового адреса доставки
 def add_pizzeria(id, text):
     vk.messages.send(user_id=id, message=text, random_id=0)
-    for ev in longpoll.listen():
-        if ev.type == VkEventType.MESSAGE_NEW:
-            if ev.to_me:
-                msg = ev.text
-                with open('adress.json', 'r', encoding='utf8') as fr:
-                    adress = json.load(fr)
-                with open('adress.json', 'w', encoding='utf8') as fw:
-                    adress['buttons'].append([{"color":"positive","action":{"type":"text","payload":None,"label":msg}}])
-                    adress['buttons'].sort(key=lambda x: x[0]['action']['label'])
-                    json.dump(adress, fw, ensure_ascii=False)
-                vk.messages.send(user_id=id, message=f'Пиццерия по адресу {msg} добавлена', random_id=0)
-                break
+    msg = message().object.message['text']
+    with open('adress.json', 'r', encoding='utf8') as fr:
+        adress = json.load(fr)
+    with open('adress.json', 'w', encoding='utf8') as fw:
+        adress['buttons'].append([{"color":"positive","action":{"type":"text","payload":None,"label":msg}}])
+        adress['buttons'].sort(key=lambda x: x[0]['action']['label'])
+        json.dump(adress, fw, ensure_ascii=False)
+    vk.messages.send(user_id=id, message=f'Пиццерия по адресу {msg} добавлена', random_id=0)
 
 # Удаление адреса доставки
 def delete_pizzeria(id, text):
     choice_of_pizzeria(id, text)
-    msg = message()
-    with open('adress.json', 'r', encoding='utf8') as fr:
-        adress = json.load(fr)
+    msg = message().object.message['text']
+    adress = pizzerias()[0]
     if msg not in pizzerias()[1]:
         return delete_pizzeria(id, text)
     with open('adress.json', 'w', encoding='utf8') as fw:
         adress['buttons'] = list(filter(lambda x: x[0]['action']['label'] != msg, adress['buttons']))
         json.dump(adress, fw, ensure_ascii=False)
-
     return vk.messages.send(user_id=id, message=f'Пиццерия по адресу {msg} удалена', random_id=0)
 
 # Чтение нового сообщения
 def new_message(event):
-    msg = event.text.lower()
-    id = event.user_id
+    msg = event.object.message['text'].lower()
+    id = event.object.message['from_id']
     if msg == 'начать':
         start(id, 'Нажмите кнопку ниже, чтоб сделать заказ')
     elif msg == 'новый заказ':
@@ -94,8 +87,6 @@ def new_message(event):
 
 def main():
     for event in longpoll.listen():
-        if event.type == VkEventType.MESSAGE_NEW:
-            if event.to_me:
-                new_message(event)
-
+        if event.type == VkBotEventType.MESSAGE_NEW:
+            new_message(event)
 main()
