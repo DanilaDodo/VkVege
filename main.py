@@ -35,11 +35,15 @@ def button(page):
     with open('buttons.json', 'r', encoding='utf8') as fb:
         buttons = json.load(fb)
     if page == 1:
-        buttons[0] = buttons[0][1:]
+        buttons[0] = buttons[0][1:3]
     elif page == len(pizzerias()[1]) // 4:
-        buttons[0] = buttons[0][:-1]
+        buttons[0] = buttons[0][:2]
     elif page == 0:
         buttons[0] = buttons[0][1:2]
+    elif page == -1:
+        buttons[0] = buttons[0][3:4]
+    else:
+        buttons[0] = buttons[0][:3]
     return buttons
 
 
@@ -152,7 +156,14 @@ def handle_choice_of_pizzeria(id, text):
         user_state[id] = {
             'state': 'choice of vege',
             'pizzeria': text,
-            'cart': {},
+            'cart': {
+                'Айсберг': 0,
+                'Лук': 0,
+                'Перец': 0,
+                'Томаты': 0,
+                'Томаты черри': 0,
+                'Шампиньоны': 0
+            },
             'page': 1
         }
         new_order(id, text)
@@ -181,7 +192,9 @@ def handle_quantity(id, text):
         vk.messages.send(user_id=id,
                          message='Ваш заказ\n' +
                                  '\n'.join([f"{i} - {j} кг" for i, j in user_state[id]["cart"].items()]),
-                         random_id=0)
+                         random_id=0,
+                         keyboard=json.dumps({"one_time": False, "inline": True, "buttons": button(-1)},
+                                             ensure_ascii=False))
         user_state[id]['state'] = 'choice of vege'
         new_order(id, user_state[id]['pizzeria'])
 
@@ -204,7 +217,14 @@ def main():
                 user_state[id] = {
                     'state': None,
                     'pizzeria': None,
-                    'cart': {},
+                    'cart': {
+                        'Айсберг': 0,
+                        'Лук': 0,
+                        'Перец': 0,
+                        'Томаты': 0,
+                        'Томаты черри': 0,
+                        'Шампиньоны': 0
+                    },
                     'page': 1
                 }
             state = user_state[id].get('state')
