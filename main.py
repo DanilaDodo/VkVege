@@ -10,31 +10,49 @@ vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, 237338455)
 admin_id = ADMIN
 user_state = {}
+PIZZERIAS = None
+VEGETABLES = None
 
 # Клавиатура
 keyboard = VkKeyboard(inline=True)
 keyboard.add_button('Новый заказ', color=VkKeyboardColor.POSITIVE)
 
 
-# JSON и список пиццерий
-def pizzerias():
+# Список пиццерий (JSON)
+def load_pizzerias():
+    global PIZZERIAS
     with open('adress.json', 'r', encoding='utf8') as f:
-        adress = json.load(f)
-        return adress, [i[0]['action']['label'] for i in adress['buttons']]
+        PIZZERIAS = json.load(f)
+
+
+# Кэширование пиццерии
+def pizzerias():
+    return PIZZERIAS, [i[0]['action']['label'] for i in PIZZERIAS['buttons']]
 
 
 # Кнопки страница назад, назад, страница вперед
-def button():
+def button(page):
     with open('buttons.json', 'r', encoding='utf8') as fb:
         buttons = json.load(fb)
-        return buttons
+    if page == 1:
+        buttons[0] = buttons[0][1:]
+    elif page == len(pizzerias()[1]) // 4:
+        buttons[0] = buttons[0][:-1]
+    elif page == 0:
+        buttons[0] = buttons[0][1:2]
+    return buttons
 
 
 # Список овощей (JSON)
-def vege():
+def load_vege():
+    global VEGETABLES
     with open('vegetables.json', 'r', encoding='utf8') as fv:
-        vege = json.load(fv)
-        return vege, [i[0]['action']['label'] for i in vege['buttons']]
+        VEGETABLES = json.load(fv)
+
+
+# Кэширование пиццерии
+def vege():
+    return VEGETABLES, [i[j]['action']['label'] for j in range(2) for i in VEGETABLES['buttons']]
 
 
 # Команда "начать"
@@ -46,15 +64,15 @@ def start(id):
 
 
 # Выбор пиццерии
-def choice_of_pizzeria(id):
-    strt, end = 0, 5
-    kkey = pizzerias()[0]
-    kkey['buttons'] = (pizzerias()[0]['buttons'][strt:end] + button())
-    keyboard = json.dumps(kkey, ensure_ascii=False)
+def choice_of_pizzeria(id, page=1):
+    limit = 5 * page
+    kkey = pizzerias()[0].copy()
+    kkey['buttons'] = (pizzerias()[0]['buttons'][limit - 5:limit] + button(page))
+    kkey = json.dumps(kkey, ensure_ascii=False)
     vk.messages.send(user_id=id,
                      message='Выберите пиццерию',
                      random_id=0,
-                     keyboard=keyboard)
+                     keyboard=kkey)
 
 
 # Создание нового адреса доставки
@@ -68,6 +86,7 @@ def add_pizzeria(id, text):
     vk.messages.send(user_id=id,
                      message=f'Пиццерия по адресу {text} добавлена',
                      random_id=0)
+    load_pizzerias()
 
 
 # Удаление адреса доставки
@@ -76,17 +95,21 @@ def delete_pizzeria(id, text):
     with open('adress.json', 'w', encoding='utf8') as fw:
         adress['buttons'] = list(filter(lambda x: x[0]['action']['label'] != text, adress['buttons']))
         json.dump(adress, fw, ensure_ascii=False)
-    return vk.messages.send(user_id=id,
-                            message=f'Пиццерия по адресу {text} удалена',
-                            random_id=0)
+    load_pizzerias()
+    vk.messages.send(user_id=id,
+                     message=f'Пиццерия по адресу {text} удалена',
+                     random_id=0)
 
 
-# Сообщение заказа
+# Выбор овощей
 def new_order(id, text):
+    kkey = vege()[0].copy()
+    kkey['buttons'] = (kkey['buttons'] + button(0))
+    kkey = json.dumps(kkey, ensure_ascii=False)
     vk.messages.send(user_id=id,
                      message=f'Заказ для {text}\nНажмите на необходимый товар',
                      random_id=0,
-                     keyboard=json.dumps(vege()[0], ensure_ascii=False))
+                     keyboard=kkey)
 
 
 # Сбор количества овощей
@@ -94,6 +117,17 @@ def quantity_of_vegetables(id, text):
     vk.messages.send(user_id=id,
                      message=f'{text}\nУкажите количество в килограммах (например, 0.1, 0.5, 1.0)',
                      random_id=0)
+
+
+# Обработка перелистывания страницы и выхода
+def turn_page(id, cmid, pay):
+    vk.messages.delete(peer_id=id, cmids=cmid, delete_for_all=1)
+    if pay == 0:
+        start(id)
+        user_state.pop(id, None)
+    else:
+        user_state[id]['page'] += pay
+        choice_of_pizzeria(id, user_state[id]['page'])
 
 
 # Обработчик состояний
@@ -115,19 +149,23 @@ def handle_deleting_pizzeria(id, text):
 # Выбор пиццерии
 def handle_choice_of_pizzeria(id, text):
     if text in pizzerias()[1]:
+        user_state[id] = {
+            'state': 'choice of vege',
+            'pizzeria': text,
+            'cart': {},
+            'page': 1
+        }
         new_order(id, text)
-        user_state[id]['state'], user_state[id]['pizzeria'] = 'choice of vege', text
     else:
         choice_of_pizzeria(id)
 
 
 # Выбор овощей
 def handle_choice_of_vegetables(id, text):
-    print(text)
     if text in vege()[1]:
         user_state[id]['cart'][text], user_state[id]['state'] = user_state[id]['cart'].get(text, 0), 'quantity'
         user_state[id]['current_item'] = text
-        quantity_of_vegetables(id, text)
+        handle_quantity(id, text)
     else:
         new_order(id, user_state[id]['pizzeria'])
 
@@ -135,16 +173,17 @@ def handle_choice_of_vegetables(id, text):
 # Установка количества
 def handle_quantity(id, text):
     veg = user_state[id]['current_item']
-    if text.isdigit():
+    try:
         user_state[id]['cart'][veg] = round(float(text), 1)
+    except:
+        quantity_of_vegetables(id, veg)
+    else:
         vk.messages.send(user_id=id,
                          message='Ваш заказ\n' +
                                  '\n'.join([f"{i} - {j} кг" for i, j in user_state[id]["cart"].items()]),
                          random_id=0)
         user_state[id]['state'] = 'choice of vege'
         new_order(id, user_state[id]['pizzeria'])
-    else:
-        quantity_of_vegetables(id, veg)
 
 
 def main():
@@ -155,20 +194,25 @@ def main():
         'choice of vege': handle_choice_of_vegetables,
         'quantity': handle_quantity
     }
+    load_vege()
+    load_pizzerias()
     for event in longpoll.listen():
         if event.type == VkBotEventType.MESSAGE_NEW:
             msg = event.object.message['text']
             id = event.object.message['from_id']
             if id not in user_state:
-                user_state[id] = user_state.get(id, {
+                user_state[id] = {
                     'state': None,
                     'pizzeria': None,
-                    'cart': {}})
+                    'cart': {},
+                    'page': 1
+                }
             state = user_state[id].get('state')
+            print(msg, user_state[id])
             if msg.lower() == 'начать':
                 start(id)
                 user_state[id]['state'] = 'starting'
-            elif msg.lower() == 'новый заказ' and state not in handlers:
+            elif msg.lower() == 'новый заказ':
                 choice_of_pizzeria(id)
                 user_state[id]['state'] = 'choice of pizzeria'
             elif msg.lower() == 'добавить пиццерию' and state not in handlers:
@@ -187,6 +231,11 @@ def main():
                     vk.messages.send(user_id=id,
                                      message=f'Сообщение нераспознанно',
                                      random_id=0)
+        elif event.type == VkBotEventType.MESSAGE_EVENT:
+            user_id = event.object['user_id']
+            cmid = event.object['conversation_message_id']
+            payload = event.object.payload['actions']
+            turn_page(user_id, cmid, payload)
 
 
 main()
