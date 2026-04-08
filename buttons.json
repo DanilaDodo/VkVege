@@ -1,1 +1,1 @@
-[[{"color": "primary", "action": {"type": "callback", "payload": null, "label": "<"}}, {"color": "negative", "action": {"type": "callback", "payload": null, "label": "назад"}}, {"color": "primary", "action": {"type": "callback", "payload": null, "label": ">"}}]]
+[[{"color": "primary", "action": {"type": "callback", "payload": {"actions": -1}, "label": "<"}}, {"color": "negative", "action": {"type": "callback", "payload": {"actions": 0}, "label": "выход"}}, {"color": "primary", "action": {"type": "callback", "payload": {"actions": 1}, "label": ">"}}]]
