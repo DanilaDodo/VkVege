@@ -44,9 +44,16 @@ def button(page):
         buttons[0] = buttons[0][1:2]
     elif page == -1:
         buttons[0] = buttons[0][3:4]
+    elif page == -2:
+        buttons[0] = buttons[0][1:5:3]
     else:
         buttons[0] = buttons[0][:3]
     return buttons
+
+
+# Вывод только служебных кнопок
+def once_button(page):
+    return json.dumps({"one_time": False, "inline": True, "buttons": button(page)}, ensure_ascii=False)
 
 
 # Список овощей (JSON)
@@ -80,6 +87,18 @@ def start(id):
                      random_id=0,
                      keyboard=keyboard.get_keyboard())
 
+
+# Сводка ИТОГО
+def all_brief(id):
+    output = {}
+    for i in briefs():
+        for j in briefs()[i]:
+            output[j] = output.get(j, 0) + briefs()[i][j]
+    message = '\n'.join([f'{key}: {value}' for key, value in output.items()])
+    vk.messages.send(user_id=id,
+                     message='ИТОГО\n' + message,
+                     random_id=0,
+                     keyboard=once_button(-2))
 
 # Очистить сводку
 def clear_of_brief():
@@ -215,8 +234,7 @@ def handle_quantity(id, text):
                          message='Ваш заказ\n' +
                                  '\n'.join([f"{i} - {j} кг" for i, j in user_state[id]["cart"].items()]),
                          random_id=0,
-                         keyboard=json.dumps({"one_time": False, "inline": True, "buttons": button(-1)},
-                                             ensure_ascii=False))
+                         keyboard=once_button(-1))
         user_state[id]['state'] = 'choice of vege'
         new_order(id, user_state[id]['pizzeria'])
 
@@ -250,10 +268,11 @@ def command_delete_pizzeria(id):
 
 # Отправить заказ
 def command_send(id):
-    print(user_state)
     for i in admin_id:
         vk.messages.send(user_id=i,
-                         message=f'{user_state[id]["pizzeria"]}\n' + '\n'.join(f'{key}: {value}' for key, value in user_state[id]["cart"].items()),
+                         message=f'{user_state[id]["pizzeria"]}\n' +
+                                 '\n'.join(f'{key}: {value}'
+                                           for key, value in user_state[id]["cart"].items()),
                          random_id=0)
     brief = briefs()
     with open('brief.json', 'w', encoding='utf8') as fw:
@@ -276,8 +295,17 @@ def command_clear_of_brief(id):
                      random_id=0)
 
 
+def command_show_brief(id):
+    message = '\n\n'.join([key + "\n" + "\n".join([f"{key_v}: {val_v}"
+                                                   for key_v, val_v in value.items()])
+                           for key, value in briefs().items()])
+    vk.messages.send(user_id=id,
+                     message=message,
+                     random_id=0)
+    all_brief(id)
+
+
 def main():
-    time.sleep(1)
     handlers = {
         'adding pizzeria': handle_adding_pizzeria,
         'deleting pizzeria': handle_deleting_pizzeria,
@@ -288,11 +316,11 @@ def main():
     commands = {
         'начать': command_start,
         'новый заказ': command_new_order,
+        'отправить заказ': command_send,
         'добавить пиццерию': command_add_pizzeria,
         'удалить пиццерию': command_delete_pizzeria,
-        'отправить заказ': command_send,
-        'очистить сводку': command_clear_of_brief
-
+        'очистить сводку': command_clear_of_brief,
+        'показать сводку': command_show_brief,
     }
     load_vege()
     load_pizzerias()
