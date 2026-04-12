@@ -12,7 +12,9 @@ bot = Bot(token=TOKEN)
 class SuperStates(BaseStateGroup):
     START_STATE = 'start'
     CHOICE_OF_PIZZERIA_STATE = 'choice of pizzeria'
+    CHOICE_VEGETABLES_STATE = 'choice vegetables'
     ADD_PIZZERIA_STATE = 'add pizzeria'
+
 
 # Data
 with open('pizzerias.json', 'r', encoding='utf8') as f:
@@ -20,6 +22,9 @@ with open('pizzerias.json', 'r', encoding='utf8') as f:
 
 with open('buttons.json', 'r', encoding='utf8') as f:
     butt = json.load(f)
+
+with open('vegetables.json', 'r', encoding='utf8') as f:
+    vegetables = json.load(f)
 
 
 # Выбор пиццерии
@@ -34,31 +39,27 @@ async def choice_of_pizzeria(id, page=1):
     return buttons
 
 
+# Выбор овощей
+async def choice_of_vege(page):
+    buttons = Keyboard(one_time=False, inline=True)
+    for v in vegetables:
+        for c in v:
+            buttons.add(Text(c),
+                        color=KeyboardButtonColor.POSITIVE)
+        buttons.row()
+    await button(buttons, page)
+    return buttons
+
+
 # Пагинация
 async def button(buttons, page=1):
-    if not page:
-        new_order = Keyboard(one_time=False, inline=True)
-        new_order.add(Text('Новый заказ'),
-                      color=KeyboardButtonColor.POSITIVE)
-        return new_order
-    elif page == 1:
-        for i in range(1, 3):
-            label = list(butt[i].keys())[0]
-            buttons.add(Callback(label,
-                                 payload={'action': butt[i][label]['action']}),
-                        color=KeyboardButtonColor(butt[i][label]['color']))
-    elif page == len(pizzerias) // 4:
-        for i in range(0, 2):
-            label = list(butt[i].keys())[0]
-            buttons.add(Callback(label,
-                                 payload={'action': butt[i][label]['action']}),
-                        color=KeyboardButtonColor(butt[i][label]['color']))
-    else:
-        for i in range(0, 3):
-            label = list(butt[i].keys())[0]
-            buttons.add(Callback(label,
-                                 payload={'action': butt[i][label]['action']}),
-                        color=KeyboardButtonColor(butt[i][label]['color']))
+    ifdict = {-1: range(1, 2),0: range(3, 4), 1: range(1, 3), len(pizzerias) // 4: range(0, 2)}
+    rangering = ifdict.get(page, range(0, 3))
+    for i in rangering:
+        label = list(butt[i].keys())[0]
+        buttons.add(Callback(label,
+                             payload={'action': butt[i][label]['action']}),
+                    color=KeyboardButtonColor(butt[i][label]['color']))
     return buttons
 
 
@@ -83,17 +84,18 @@ async def turn_page(event: MessageEvent):
                                           SuperStates.START_STATE,
                                           page=0)
             await event.send_message('Нажмите на кнопку ниже, чтоб сделать новый заказ',
-                                     keyboard=await button(butt, 0))
+                                     keyboard=await button(Keyboard(one_time=False, inline=True), 0))
     except Exception as e:
         print(f'Произошла ошибка - {e}')
 
 # Хендлер добавления пиццерии
 @bot.on.message(state=SuperStates.ADD_PIZZERIA_STATE)
 async def add_pizzeria_handler(message):
+    pizzerias.append(message.text)
     with open('pizzerias.json', 'w', encoding='utf8') as fw:
-        pizzerias.append(message.text)
         json.dump(sorted(pizzerias), fw, ensure_ascii=False)
     await message.answer(f"Пиццерия по адресу {message.text} добавлена")
+    await start_handler(message)
 
 
 # ADD_PIZZERIA_STATE
@@ -112,7 +114,17 @@ async def start_handler(message):
                                   SuperStates.START_STATE,
                                   page=0)
     await message.answer('Нажмите на кнопку ниже, чтоб сделать новый заказ',
-                         keyboard=await button(butt, 0))
+                         keyboard=await button(Keyboard(one_time=False, inline=True), 0))
+
+
+# CHOICE_VEGETABLES_STATE
+@bot.on.message(state=SuperStates.CHOICE_OF_PIZZERIA_STATE, text=pizzerias)
+async def choice_vegetables(message):
+    await bot.state_dispenser.set(message.peer_id,
+                                  SuperStates.CHOICE_VEGETABLES_STATE,
+                                  page=-1)
+    await message.answer(f'Заказ для {message.text}\nНажмите на необходимый товар',
+                         keyboard=await choice_of_vege(-1))
 
 
 # CHOICE_OF_PIZZERIA_STATE
